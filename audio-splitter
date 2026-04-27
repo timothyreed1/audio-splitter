@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+
+import argparse
+import subprocess
+import sys
+import os
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Split audio file into equal-length segments using ffmpeg",
+        add_help=False
+    )
+    
+    parser.add_argument(
+        "-t", "--time",
+        required=False,
+        help="Segment time in seconds (e.g., 0.5 for half second)"
+    )
+    parser.add_argument(
+        "-i", "--input",
+        required=False,
+        help="Input audio file path"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        required=False,
+        help="Output file pattern (e.g., 'segment' produces segment_001.wav)"
+    )
+    parser.add_argument(
+        "-d", "--directory",
+        required=False,
+        help="Directory where segment files will be written (must exist, relative to current directory)"
+    )
+    parser.add_argument(
+        "-f", "--format",
+        required=False,
+        default="wav",
+        help="Output audio format: wav or flac (default: wav)"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Print verbose output"
+    )
+    parser.add_argument(
+        "-h", "--help",
+        action="store_true",
+        help="Show this help message and exit"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.help:
+        parser.print_help()
+        sys.exit(0)
+    
+    if not args.time or not args.input or not args.output:
+        print("Error: Missing required arguments", file=sys.stderr)
+        print("\nUsage: audio-splitter -t <time> -i <input> -o <o> [options]", file=sys.stderr)
+        print("\nRequired arguments:")
+        print("  -t, --time <seconds>    Segment time in seconds (e.g., 0.5)")
+        print("  -i, --input <file>      Input audio file path")
+        print("  -o, --output <pattern>  Output file pattern (e.g., 'segment')")
+        print("\nOptional arguments:")
+        print("  -d, --directory <dir>   Directory for output files (must exist)")
+        print("  -f, --format <fmt>      Output format: wav or flac (default: wav)")
+        print("  -v, --verbose           Print verbose output")
+        print("  -h, --help              Show this help message")
+        sys.exit(1)
+    
+    if args.format.lower() not in ["wav", "flac"]:
+        print(f"Error: Format '{args.format}' not supported. Use 'wav' or 'flac'", file=sys.stderr)
+        sys.exit(1)
+    
+    if not os.path.isfile(args.input):
+        print(f"Error: Input file '{args.input}' not found", file=sys.stderr)
+        sys.exit(1)
+    
+    if args.directory:
+        if not os.path.isdir(args.directory):
+            print(f"Error: Directory '{args.directory}' does not exist", file=sys.stderr)
+            sys.exit(1)
+        
+        abs_dir = os.path.abspath(args.directory)
+        abs_cwd = os.path.abspath(".")
+        
+        if not abs_dir.startswith(abs_cwd):
+            print(f"Error: Directory '{args.directory}' must be local to current directory", file=sys.stderr)
+            sys.exit(1)
+        
+        output_path = os.path.join(args.directory, args.output)
+    else:
+        output_path = args.output
+    
+    if args.verbose:
+        print(f"Input file: {args.input}")
+        print(f"Segment time: {args.time} seconds")
+        print(f"Output pattern: {args.output}")
+        print(f"Output format: {args.format.lower()}")
+        if args.directory:
+            print(f"Output directory: {args.directory}")
+    
+    fmt = args.format.lower()
+    cmd = [
+        "ffmpeg",
+        "-i", args.input,
+        "-f", "segment",
+        "-segment_time", args.time,
+        "-c", "copy",
+        f"{output_path}_%03d.{fmt}"
+    ]
+    
+    if args.verbose:
+        print(f"Running: {' '.join(cmd)}")
+    else:
+        cmd.insert(1, "-loglevel")
+        cmd.insert(2, "error")
+    
+    try:
+        result = subprocess.run(cmd, check=True)
+        if args.verbose:
+            print("Split completed successfully")
+        sys.exit(result.returncode)
+    except subprocess.CalledProcessError as e:
+        print(f"Error: ffmpeg failed with exit code {e.returncode}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: ffmpeg not found. Make sure it's installed and in your PATH", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
