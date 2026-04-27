@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+
+import argparse
+import subprocess
+import sys
+import os
+import glob
+import random
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Join audio segments into a single file using ffmpeg",
+        add_help=False
+    )
+    
+    parser.add_argument(
+        "-d", "--directory",
+        required=False,
+        help="Directory containing input segment files (required)"
+    )
+    parser.add_argument(
+        "-p", "--pattern",
+        required=False,
+        help="Glob pattern for input files (e.g., 'segment_*.flac')"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        required=False,
+        help="Output file name (e.g., 'output.flac')"
+    )
+    parser.add_argument(
+        "-f", "--format",
+        required=False,
+        help="Output audio format (inferred from output filename if not specified)"
+    )
+    parser.add_argument(
+        "-s", "--sort",
+        required=False,
+        default="default",
+        choices=["default", "reverse", "random"],
+        help="Sort order: default (ascending), reverse (descending), or random (default: default)"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Print verbose output"
+    )
+    parser.add_argument(
+        "-h", "--help",
+        action="store_true",
+        help="Show this help message and exit"
+    )
+    
+    args = parser.parse_args()
+    
+    if args.help:
+        parser.print_help()
+        sys.exit(0)
+    
+    if not args.directory or not args.pattern or not args.output:
+        print("Error: Missing required arguments", file=sys.stderr)
+        print("\nUsage: audio-joiner -d <dir> -p <pattern> -o <o> [options]", file=sys.stderr)
+        print("\nRequired arguments:")
+        print("  -d, --directory <dir>   Directory containing input segment files")
+        print("  -p, --pattern <glob>    Glob pattern for input files (e.g., 'segment_*.flac')")
+        print("  -o, --output <file>     Output file name (e.g., 'output.flac')")
+        print("\nOptional arguments:")
+        print("  -f, --format <fmt>      Output format (e.g., flac, wav, mp3; inferred from filename if not specified)")
+        print("  -s, --sort <order>      Sort order: default, reverse, or random (default: default)")
+        print("  -v, --verbose           Print verbose output")
+        print("  -h, --help              Show this help message")
+        sys.exit(1)
+    
+    if not os.path.isdir(args.directory):
+        print(f"Error: Directory '{args.directory}' does not exist", file=sys.stderr)
+        sys.exit(1)
+    
+    abs_dir = os.path.abspath(args.directory)
+    abs_cwd = os.path.abspath(".")
+    
+    if not abs_dir.startswith(abs_cwd):
+        print(f"Error: Directory '{args.directory}' must be local to current directory", file=sys.stderr)
+        sys.exit(1)
+    
+    pattern_full = os.path.join(args.directory, args.pattern)
+    files = sorted(glob.glob(pattern_full))
+    
+    if not files:
+        print(f"Error: No files matching pattern '{args.pattern}' in directory '{args.directory}'", file=sys.stderr)
+        sys.exit(1)
+    
+    if args.sort == "reverse":
+        files.reverse()
+    elif args.sort == "random":
+        random.shuffle(files)
+    
+    output_file = os.path.join(args.directory, args.output)
+    
+    if args.verbose:
+        print(f"Directory: {args.directory}")
+        print(f"Pattern: {args.pattern}")
+        print(f"Found {len(files)} file(s):")
+        print(f"  (sort order: {args.sort})")
+        for f in files:
+            print(f"  {f}")
+        print(f"Output file: {output_file}")
+        if args.format:
+            print(f"Output format: {args.format}")
+    
+    concat_file = ".audio_joiner_concat.txt"
+    try:
+        with open(concat_file, "w") as f:
+            for file in files:
+                f.write(f"file '{os.path.abspath(file)}'\n")
+        
+        cmd = [
+            "ffmpeg",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", concat_file,
+            "-c", "copy",
+        ]
+        
+        if args.format:
+            cmd.extend(["-f", args.format])
+        
+        cmd.append(output_file)
+        
+        if args.verbose:
+            print(f"Running: {' '.join(cmd)}")
+        else:
+            cmd.insert(1, "-loglevel")
+            cmd.insert(2, "error")
+        
+        result = subprocess.run(cmd, check=True)
+        if args.verbose:
+            print("Join completed successfully")
+        sys.exit(result.returncode)
+    
+    except subprocess.CalledProcessError as e:
+        print(f"Error: ffmpeg failed with exit code {e.returncode}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: ffmpeg not found. Make sure it's installed and in your PATH", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        if os.path.isfile(concat_file):
+            os.remove(concat_file)
+
+if __name__ == "__main__":
+    main()
